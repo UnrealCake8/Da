@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network International Payment Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f6f8;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      width: min(360px, 90vw);
+      box-shadow: 0 5px 25px #0001;
+    }
+    h2 { margin-top: 0; }
+    label { display: block; margin: 16px 0 6px; }
+    input, select, button {
+      width: 100%;
+      padding: 12px;
+      box-sizing: border-box;
+      border-radius: 6px;
+      font-size: 15px;
+    }
+    input, select { border: 1px solid #ccc; }
+    button {
+      background: #182c56;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:disabled { opacity: .6; }
+    #status {
+      margin-top: 16px;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Payment Test</h2>
+    <p>Network International / N-Genius</p>
+
+    <label for="environment">Environment</label>
+    <select id="environment">
+      <option value="sandbox">Sandbox</option>
+      <option value="production">Production</option>
+    </select>
+
+    <label for="apiKey">API Key</label>
+    <input id="apiKey" type="password"
+           placeholder="Enter API key">
+
+    <label for="outletId">Outlet Reference</label>
+    <input id="outletId"
+           placeholder="Enter outlet reference">
+
+    <label for="amount">Amount (AED)</label>
+    <input id="amount" type="number"
+           value="5.00" min="0.01" step="0.01">
+
+    <button id="payBtn" onclick="pay()">Pay Now</button>
+    <div id="status" role="status"></div>
+  </div>
+
+  <script>
+    const BASE_URLS = {
+      sandbox: "https://api-gateway.sandbox.ngenius-payments.com",
+      production: "https://api-gateway.ngenius-payments.com"
+    };
+
+    async function pay() {
+      const status = document.getElementById("status");
+      const button = document.getElementById("payBtn");
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const outlet = document.getElementById("outletId").value.trim();
+      const amount = Number(document.getElementById("amount").value);
+      const environment = document.getElementById("environment").value;
+
+      if (!apiKey || !outlet || !Number.isFinite(amount) || amount <= 0) {
+        status.textContent = "Enter valid credentials and amount.";
+        return;
+      }
+
+      const minorUnits = Math.round(amount * 100);
+      const base = BASE_URLS[environment];
+
+      button.disabled = true;
+      status.textContent = "Requesting access token...";
+
+      try {
+        const tokenResponse = await fetch(
+          base + "/identity/auth/access-token",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Basic " + apiKey,
+              "Content-Type": "application/vnd.ni-identity.v1+json"
+            },
+            body: JSON.stringify({ realmName: "ni" })
+          }
+        );
+
+        if (!tokenResponse.ok) {
+          throw new Error(
+            "Authentication failed: HTTP " + tokenResponse.status
+          );
+        }
+
+        const tokenData = await tokenResponse.json();
+        const token = tokenData.access_token;
+
+        if (!token) throw new Error("No access token returned.");
+
+        status.textContent = "Creating payment order...";
+
+        const orderResponse = await fetch(
+          base + "/transactions/outlets/" +
+          encodeURIComponent(outlet) + "/orders",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Bearer " + token,
+              "Content-Type": "application/vnd.ni-payment.v2+json",
+              "Accept": "application/vnd.ni-payment.v2+json"
+            },
+            body: JSON.stringify({
+              action: "PURCHASE",
+              amount: {
+                currencyCode: "AED",
+                value: minorUnits
+              },
+              merchantAttributes: {
+                redirectUrl: window.location.href.split("?")[0]
+              }
+            })
+          }
+        );
+
+        if (!orderResponse.ok) {
+          throw new Error(
+            "Order creation failed: HTTP " + orderResponse.status +
+            " — " + (await orderResponse.text()).slice(0, 500)
+          );
+        }
+
+        const order = await orderResponse.json();
+        const paymentUrl = order._links?.payment?.href;
+
+        if (!paymentUrl) {
+          throw new Error("Payment URL missing from response.");
+        }
+
+        status.textContent = "Redirecting to checkout...";
+        window.location.assign(paymentUrl);
+
+      } catch (error) {
+        status.textContent = "Error: " + error.message +
+          ". If the request was blocked by CORS, a backend is required.";
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (params.has("ref")) {
+      document.getElementById("status").textContent =
+        "Returned from checkout. Order reference: " +
+        params.get("ref") +
+        ". Verify the payment status with the API.";
+    }
+  </script>
+</body>
+</html>
