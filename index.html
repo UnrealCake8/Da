@@ -1,183 +1,85 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Network International Payment Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Network International — Payment Test</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f5f6f8;
-      display: grid;
-      place-items: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .card {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      width: min(360px, 90vw);
-      box-shadow: 0 5px 25px #0001;
-    }
-    h2 { margin-top: 0; }
-    label { display: block; margin: 16px 0 6px; }
-    input, select, button {
-      width: 100%;
-      padding: 12px;
-      box-sizing: border-box;
-      border-radius: 6px;
-      font-size: 15px;
-    }
-    input, select { border: 1px solid #ccc; }
-    button {
-      background: #182c56;
-      color: white;
-      border: none;
-      cursor: pointer;
-      margin-top: 20px;
-    }
-    button:disabled { opacity: .6; }
-    #status {
-      margin-top: 16px;
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#18233d;background:#f4f6fa}
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px}
+    main{width:min(100%,430px);background:#fff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 16px 48px #10254a12;padding:30px}
+    h1{font-size:24px;margin:8px 0}p{line-height:1.5;color:#607087;font-size:14px;margin:0 0 20px}
+    .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#425a83}
+    .notice{background:#fff7e5;border:1px solid #f5da95;border-radius:10px;padding:12px;margin-bottom:22px;color:#734e0b;font-size:13px;line-height:1.5}
+    label{display:block;font-size:13px;font-weight:650;margin:16px 0 7px}
+    input,button{width:100%;font:inherit;border-radius:9px;padding:13px}
+    input{border:1px solid #cbd5e1;background:#fff;min-width:0}
+    input:focus-visible,button:focus-visible{outline:3px solid #9dbaf9;outline-offset:2px}
+    .amount{display:flex;align-items:center;gap:12px}.amount span{font-weight:700}
+    button{background:#172f61;color:#fff;border:none;font-weight:650;cursor:pointer;margin-top:22px}
+    button:disabled{cursor:wait;opacity:.6}#status{margin-top:14px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+    #status.error{color:#ad2525}#status.success{color:#12633b}
+    footer{margin-top:20px;font-size:12px;color:#738198}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Payment Test</h2>
-    <p>Network International / N-Genius</p>
-
-    <label for="environment">Environment</label>
-    <select id="environment">
-      <option value="sandbox">Sandbox</option>
-      <option value="production">Production</option>
-    </select>
-
-    <label for="apiKey">API Key</label>
-    <input id="apiKey" type="password"
-           placeholder="Enter API key">
-
-    <label for="outletId">Outlet Reference</label>
-    <input id="outletId"
-           placeholder="Enter outlet reference">
-
-    <label for="amount">Amount (AED)</label>
-    <input id="amount" type="number"
-           value="5.00" min="0.01" step="0.01">
-
-    <button id="payBtn" onclick="pay()">Pay Now</button>
-    <div id="status" role="status"></div>
-  </div>
-
+  <main>
+    <div class="eyebrow">N-Genius / Network International</div>
+    <h1>Payment test</h1>
+    <p>Enter a transaction amount to open Network International's hosted checkout.</p>
+    <div class="notice"><strong>Live production payments.</strong> A completed checkout may charge a real card. Use only amounts you intend to charge.</div>
+    <form id="payment-form">
+      <label for="access-token">Test access token</label>
+      <input id="access-token" type="password" autocomplete="off" spellcheck="false" required placeholder="Worker TEST_ACCESS_TOKEN">
+      <label for="amount">Transaction amount (AED)</label>
+      <div class="amount"><span>AED</span><input id="amount" type="number" min="1" max="1000" step="0.01" value="5.00" required></div>
+      <button id="pay" type="submit">Continue to payment</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <footer>API credentials are stored in Cloudflare, not in this page. The test token stays in this tab's memory and is not saved.</footer>
+  </main>
   <script>
-    const BASE_URLS = {
-      sandbox: "https://api-gateway.sandbox.ngenius-payments.com",
-      production: "https://api-gateway.ngenius-payments.com"
-    };
-
-    async function pay() {
-      const status = document.getElementById("status");
-      const button = document.getElementById("payBtn");
-      const apiKey = document.getElementById("apiKey").value.trim();
-      const outlet = document.getElementById("outletId").value.trim();
+    const WORKER_URL = "https://ngenius-production-checkout.hibbahhammadhussain2.workers.dev";
+    const form = document.getElementById("payment-form");
+    const button = document.getElementById("pay");
+    const status = document.getElementById("status");
+    function message(text, type = "") {
+      status.className = type;
+      status.textContent = text;
+    }
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const token = document.getElementById("access-token").value.trim();
       const amount = Number(document.getElementById("amount").value);
-      const environment = document.getElementById("environment").value;
-
-      if (!apiKey || !outlet || !Number.isFinite(amount) || amount <= 0) {
-        status.textContent = "Enter valid credentials and amount.";
+      if (!token || !Number.isFinite(amount) || amount < 1 || amount > 1000 ||
+          Math.abs(amount * 100 - Math.round(amount * 100)) > 0.00001) {
+        message("Enter a test token and an amount from AED 1.00 to AED 1,000.00.", "error");
         return;
       }
-
-      const minorUnits = Math.round(amount * 100);
-      const base = BASE_URLS[environment];
-
       button.disabled = true;
-      status.textContent = "Requesting access token...";
-
+      message("Creating your payment checkout...");
       try {
-        const tokenResponse = await fetch(
-          base + "/identity/auth/access-token",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": "Basic " + apiKey,
-              "Content-Type": "application/vnd.ni-identity.v1+json"
-            },
-            body: JSON.stringify({ realmName: "ni" })
-          }
-        );
-
-        if (!tokenResponse.ok) {
-          throw new Error(
-            "Authentication failed: HTTP " + tokenResponse.status
-          );
+        const response = await fetch(WORKER_URL + "/create-order", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token},
+          body: JSON.stringify({amount})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Request failed (" + response.status + ")");
+        if (!data.paymentUrl || !data.paymentUrl.startsWith("https://")) {
+          throw new Error("The payment gateway did not return a valid checkout URL.");
         }
-
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.access_token;
-
-        if (!token) throw new Error("No access token returned.");
-
-        status.textContent = "Creating payment order...";
-
-        const orderResponse = await fetch(
-          base + "/transactions/outlets/" +
-          encodeURIComponent(outlet) + "/orders",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": "Bearer " + token,
-              "Content-Type": "application/vnd.ni-payment.v2+json",
-              "Accept": "application/vnd.ni-payment.v2+json"
-            },
-            body: JSON.stringify({
-              action: "PURCHASE",
-              amount: {
-                currencyCode: "AED",
-                value: minorUnits
-              },
-              merchantAttributes: {
-                redirectUrl: window.location.href.split("?")[0]
-              }
-            })
-          }
-        );
-
-        if (!orderResponse.ok) {
-          throw new Error(
-            "Order creation failed: HTTP " + orderResponse.status +
-            " — " + (await orderResponse.text()).slice(0, 500)
-          );
-        }
-
-        const order = await orderResponse.json();
-        const paymentUrl = order._links?.payment?.href;
-
-        if (!paymentUrl) {
-          throw new Error("Payment URL missing from response.");
-        }
-
-        status.textContent = "Redirecting to checkout...";
-        window.location.assign(paymentUrl);
-
+        message("Redirecting to Network International...", "success");
+        window.location.assign(data.paymentUrl);
       } catch (error) {
-        status.textContent = "Error: " + error.message +
-          ". If the request was blocked by CORS, a backend is required.";
+        message(error.message || "Unable to create checkout. Check Cloudflare Worker configuration.", "error");
       } finally {
         button.disabled = false;
       }
-    }
-
-    const params = new URLSearchParams(location.search);
-    if (params.has("ref")) {
-      document.getElementById("status").textContent =
-        "Returned from checkout. Order reference: " +
-        params.get("ref") +
-        ". Verify the payment status with the API.";
+    });
+    if (new URLSearchParams(location.search).has("ref")) {
+      message("Returned from checkout. Confirm the payment status in your N-Genius dashboard; a redirect alone does not confirm payment.", "success");
     }
   </script>
 </body>
